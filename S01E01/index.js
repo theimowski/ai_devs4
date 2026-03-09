@@ -192,4 +192,25 @@ ${jobsList}`;
 
   fs.writeFileSync('results.json', JSON.stringify(resultsJson, null, 2));
   console.log(`Final results (${resultsJson.length} people with 'transport' tag) saved to results.json`);
+
+  // Final verification step
+  const verifyUrl = 'https://hub.ag3nts.org/verify';
+  const verifyPayload = {
+    apikey: key,
+    task: "people",
+    answer: resultsJson
+  };
+
+  console.log(`Sending verification to ${verifyUrl}...`);
+  const verifyResponse = await fetch(verifyUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(verifyPayload)
+  });
+
+  const verifyData = await verifyResponse.json();
+  console.log(`Verification Status: ${verifyResponse.status}`);
+  console.log('Verification Response:', JSON.stringify(verifyData, null, 2));
 })();
