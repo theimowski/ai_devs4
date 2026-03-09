@@ -4,8 +4,7 @@
   "description": "Minimalistic JavaScript project for AI Devs tasks",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "download:people": "node download_people.js"
+    "start": "node index.js"
   },
   "engines": {
     "node": ">=18.0.0"
