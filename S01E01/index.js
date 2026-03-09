@@ -3,7 +3,7 @@ const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
 
 const DRY_RUN = false; // Set to true to only display the prompt without calling the API
-const MODEL = "openai/gpt-4o-mini";
+const MODEL = "openai/gpt-5.2";
 const USE_CALENDAR_YEAR_ONLY = true;
 const filename = 'people.csv';
 const key = process.env.HUB_AG3NTS_KEY;
