@@ -1,0 +1,13 @@
+{
+  "name": "s01e01",
+  "version": "1.0.0",
+  "description": "Minimalistic JavaScript project for AI Devs tasks",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "download:people": "node download_people.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
