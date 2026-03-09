@@ -145,12 +145,13 @@ ${jobsList}`;
   const modelSafeName = MODEL.split('/').pop();
   const outputFilename = `tagged-${modelSafeName}.csv`;
 
+  let finalRecords = filtered;
+
   if (fs.existsSync(outputFilename)) {
     console.log(`Results for model ${MODEL} already exist in ${outputFilename}. Skipping API call.`);
-    process.exit(0);
-  }
-
-  if (filtered.length > 0) {
+    const cachedContent = fs.readFileSync(outputFilename, 'utf-8');
+    finalRecords = parse(cachedContent, { columns: true });
+  } else if (filtered.length > 0) {
     try {
       const categorizationResults = await categorizeBatch(filtered.map(r => r.job));
       
@@ -162,13 +163,33 @@ ${jobsList}`;
           filtered[res.index].tags = res.tags.join(', ');
         }
       });
+
+      const output = stringify(filtered, { header: true });
+      fs.writeFileSync(outputFilename, output);
+      console.log(`Finished! Results saved to ${outputFilename} ${DRY_RUN ? '(DRY RUN mode)' : ''}`);
+      finalRecords = filtered;
     } catch (error) {
       console.error('Categorization failed:', error.message);
       filtered.forEach(r => r.tags = 'ERROR');
+      finalRecords = filtered;
     }
   }
 
-  const output = stringify(filtered, { header: true });
-  fs.writeFileSync(outputFilename, output);
-  console.log(`Finished! Results saved to ${outputFilename} ${DRY_RUN ? '(DRY RUN mode)' : ''}`);
+  // Create results.json in requested format
+  const resultsJson = finalRecords
+    .filter(r => {
+      const tags = r.tags ? r.tags.split(', ').map(t => t.trim()) : [];
+      return tags.includes('transport');
+    })
+    .map(r => ({
+      name: r.name,
+      surname: r.surname,
+      gender: r.gender,
+      born: parseInt(r.birthDate?.split('-')[0]),
+      city: r.birthPlace,
+      tags: r.tags ? r.tags.split(', ').filter(t => t) : []
+    }));
+
+  fs.writeFileSync('results.json', JSON.stringify(resultsJson, null, 2));
+  console.log(`Final results (${resultsJson.length} people with 'transport' tag) saved to results.json`);
 })();
