@@ -2,12 +2,107 @@ const fs = require('fs');
 const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
 
-const USE_CALENDAR_YEAR_ONLY = true; // Set to false for full date comparison
-
+const DRY_RUN = false; // Set to true to only display the prompt without calling the API
+const MODEL = "openai/gpt-4o-mini";
+const USE_CALENDAR_YEAR_ONLY = true;
 const filename = 'people.csv';
 const key = process.env.HUB_AG3NTS_KEY;
 const url = `https://hub.ag3nts.org/data/${key}/${filename}`;
-const REFERENCE_DATE = new Date('2026-03-09'); // Reference date is today
+const REFERENCE_DATE = new Date('2026-03-09');
+
+const API_KEY = process.env.OR_AI_DEVS_4_API_KEY;
+const OR_HOST = process.env.OR_HOST || 'openrouter.ai';
+const ENDPOINT = `https://${OR_HOST}/api/v1/responses`;
+
+const ALLOWED_TAGS = [
+  'IT',
+  'transport',
+  'edukacja',
+  'medycyna',
+  'praca z ludźmi',
+  'praca z pojazdami',
+  'praca fizyczna'
+];
+
+const batchCategorySchema = {
+  type: "json_schema",
+  name: "batch_job_categorization",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      results: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            index: { type: "integer" },
+            tags: {
+              type: "array",
+              items: { type: "string", enum: ALLOWED_TAGS }
+            }
+          },
+          required: ["index", "tags"],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ["results"],
+    additionalProperties: false
+  }
+};
+
+async function categorizeBatch(jobs) {
+  const jobsList = jobs.map((job, idx) => `ID: ${idx}\nOpis: ${job}`).join('\n\n---\n\n');
+  const prompt = `Sklasyfikuj poniższą listę opisów stanowisk pracy do jednej lub więcej kategorii (tags).
+Używaj wyłącznie kategorii z listy: ${ALLOWED_TAGS.join(', ')}.
+Dla każdego ID zwróć listę pasujących kategorii.
+
+Lista zadań:
+---
+
+${jobsList}`;
+
+  if (DRY_RUN) {
+    console.log('--- DRY RUN: PROMPT START ---');
+    console.log(prompt);
+    console.log('--- DRY RUN: PROMPT END ---');
+    return jobs.map((_, idx) => ({ index: idx, tags: ['DRY_RUN'] }));
+  }
+
+  if (!API_KEY) {
+    throw new Error('OR_AI_DEVS_4_API_KEY environment variable is not set');
+  }
+
+  const body = {
+    model: MODEL,
+    input: prompt,
+    text: { format: batchCategorySchema }
+  };
+
+  const response = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.output_text || data.output?.find(o => o.type === 'message')?.content?.find(c => c.type === 'output_text')?.text;
+  
+  if (!text) {
+    throw new Error('No output text in API response');
+  }
+
+  return JSON.parse(text).results;
+}
 
 (async () => {
   if (!fs.existsSync(filename)) {
@@ -17,14 +112,11 @@ const REFERENCE_DATE = new Date('2026-03-09'); // Reference date is today
   }
 
   const content = fs.readFileSync(filename, 'utf-8');
-  
-  // Parse CSV into an array of objects
   const records = parse(content, {
     columns: true,
     skip_empty_lines: true
   });
 
-  // Apply filters
   const filtered = records.filter(row => {
     const isMan = row.gender === 'M';
     const isFromGrudziadz = row.birthPlace === 'Grudziądz';
@@ -46,10 +138,37 @@ const REFERENCE_DATE = new Date('2026-03-09'); // Reference date is today
     return isMan && isFromGrudziadz && isAgeCorrect;
   });
 
-  // Convert objects back to CSV and save
-  const output = stringify(filtered, {
-    header: true
-  });
+  // Intermediate step: save filtered entries
+  fs.writeFileSync('filtered.csv', stringify(filtered, { header: true }));
+  console.log(`Saved ${filtered.length} filtered records to filtered.csv`);
 
-  fs.writeFileSync('filtered.csv', output);
+  const modelSafeName = MODEL.split('/').pop();
+  const outputFilename = `tagged-${modelSafeName}.csv`;
+
+  if (fs.existsSync(outputFilename)) {
+    console.log(`Results for model ${MODEL} already exist in ${outputFilename}. Skipping API call.`);
+    process.exit(0);
+  }
+
+  if (filtered.length > 0) {
+    try {
+      const categorizationResults = await categorizeBatch(filtered.map(r => r.job));
+      
+      console.log('Categorization results:');
+      console.log(JSON.stringify(categorizationResults, null, 2));
+      
+      categorizationResults.forEach(res => {
+        if (filtered[res.index]) {
+          filtered[res.index].tags = res.tags.join(', ');
+        }
+      });
+    } catch (error) {
+      console.error('Categorization failed:', error.message);
+      filtered.forEach(r => r.tags = 'ERROR');
+    }
+  }
+
+  const output = stringify(filtered, { header: true });
+  fs.writeFileSync(outputFilename, output);
+  console.log(`Finished! Results saved to ${outputFilename} ${DRY_RUN ? '(DRY RUN mode)' : ''}`);
 })();
