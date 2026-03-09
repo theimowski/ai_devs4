@@ -1,29 +1,25 @@
 const fs = require('fs');
+const { parse } = require('csv-parse/sync');
 
-if (!fs.existsSync('people.csv')) {
-  console.error('people.csv not found. Run index.js first.');
+// Allow filename as argument, default to 'people.csv'
+const filename = process.argv[2] || 'people.csv';
+
+if (!fs.existsSync(filename)) {
+  console.error(`${filename} not found. Run index.js first.`);
   process.exit(1);
 }
 
-const content = fs.readFileSync('people.csv', 'utf-8');
-const lines = content.trim().split('\n');
+const content = fs.readFileSync(filename, 'utf-8');
 
-// Simple CSV parser that handles commas inside quotes
-const splitCSV = (line) => {
-  const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-  return matches ? matches.map(m => m.replace(/^"|"$/g, '').trim()) : [];
-};
-
-const headers = splitCSV(lines[0]);
-const df = lines.slice(1).map(line => {
-  const values = splitCSV(line);
-  return headers.reduce((obj, header, i) => {
-    obj[header] = values[i];
-    return obj;
-  }, {});
+// Parse CSV into an array of objects
+const df = parse(content, {
+  columns: true,
+  skip_empty_lines: true
 });
 
-console.log('--- DataFrame Head (First 5 rows) ---');
+const headers = Object.keys(df[0] || {});
+
+console.log(`--- DataFrame Head (First 5 rows from ${filename}) ---`);
 const displayHead = df.slice(0, 5).map(row => {
   const displayRow = { ...row };
   if (displayRow.job && displayRow.job.length > 30) {
